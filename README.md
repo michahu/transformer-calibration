@@ -6,7 +6,7 @@ Author: Michael Hu
 
 Advisor: Prof. Karthik Narasimhan
 
-General goals / structure: 
+## Project structure
 
 Each week contains 
 - a Jupyter Notebook detailing experimental progress
