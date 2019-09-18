@@ -1,5 +1,14 @@
 # transformer-calibration
 
-I'm Michael, a junior in the Computer Science department, with minors in applied math and machine learning. 
-Doing my fall semester independent work with Prof. Karthik Narasimhan. More updates to this as I learn more and 
-figure out what's going on.
+Author: Michael Hu
+- Computer Science junior at Princeton University
+- Minors in applied math and machine learning
+
+Advisor: Prof. Karthik Narasimhan
+
+General goals / structure: 
+
+Each week contains 
+- a Jupyter Notebook detailing experimental progress
+- a markdown file detailing ideas, thoughts, and what I learned
+- possible additional pdfs of supplementary materials of writeups, as I complete them
