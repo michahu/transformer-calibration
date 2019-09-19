@@ -42,7 +42,12 @@ actual text?
 # Misc
 
 Entropy - average number of bits needed to encode info
+
 Perplexity - how well a probability model predicts a sample
-Cross-entropy loss - measures how off a prediction is from the true label (0 or 1)
+
+Cross-entropy loss - measures how "off" a prediction is from the true label 
+(0 or 1)
+
 KL divergence - how different two probability distributions are from each other
+
 High perplexity = the model is "confused"
