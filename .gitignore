@@ -1,4 +1,7 @@
-/experiments/*
+# /experiments/*
+/gpt-2-openai
+/gpt-2-fork
+/gpt-2-simple
 *.aux
 *.fdb_latexmk
 *.fls
