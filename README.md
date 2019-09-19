@@ -11,4 +11,4 @@ Advisor: Prof. Karthik Narasimhan
 Each week contains 
 - a Jupyter Notebook detailing experimental progress
 - a markdown file detailing ideas, thoughts, and what I learned
-- possible additional pdfs of supplementary materials of writeups, as I complete them
+- possible additional pdfs of supplementary materials and writeups, as I complete them
