@@ -5,10 +5,3 @@ Author: Michael Hu
 - Minors in applied math and machine learning
 
 Advisor: Prof. Karthik Narasimhan
-
-## Project structure
-
-Each week contains 
-- a Jupyter Notebook detailing experimental progress
-- a markdown file detailing ideas, thoughts, and what I learned
-- possible additional pdfs of supplementary materials and writeups, as I complete them

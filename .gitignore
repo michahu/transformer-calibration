@@ -2,6 +2,8 @@
 /gpt-2-openai
 /gpt-2-fork
 /gpt-2-simple
+*.bbl
+*.blg
 *.aux
 *.fdb_latexmk
 *.fls
