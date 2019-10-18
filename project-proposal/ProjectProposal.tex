@@ -29,15 +29,15 @@ Broadly speaking, the motivation is to develop techniques that will help us trai
 
 {\large \textbf{Problem Background and Related Work}}
 
-A challenge in text generation is creating metrics to evaluate text-generating models. Suppose that a human believes that one model produces better English than the rest. How can we measure this ``goodness" quantitatively? One method is to calculate the entropy rate of the model's text output and compare it against the entropy rate of the underlying language itself. Informally, informational entropy is the average rate at which a data source produces information \cite{shannon-ie}. Knowing this, we can reason that our model should produce information at a rate close to that of the baseline language.
+A challenge in text generation is creating metrics to evaluate text-generating models. Suppose that a human believes that one model produces better English than the rest. How can we measure this ``goodness" quantitatively? One method is to calculate the entropy rate of the model's text output and compare it against the entropy rate of the underlying language itself. Informally, informational entropy is the average rate at which a data source produces information \cite{shannon-ie}. Thus, we can reason that our model should produce information at a rate close to that of the baseline language.
 
-With this in mind, in 2019 Braverman et. al. proposed Algorithm 2, a step-wise ``local entropy rate calibration" algorithm. Essentially, the algorithm calibrates models to choose words that minimize growth in the entropy rate one step in the future. Experimentally, Algorithm 2 decreases entropy growth compared to the baseline model after one iteration \cite{Braverman}. 
+In 2019 Braverman et. al. proposed Algorithm 2, a step-wise ``local entropy rate calibration" algorithm. Essentially, the algorithm calibrates models to choose words that minimize growth in entropy rate one step in the future. Experimentally, Algorithm 2 decreases entropy growth compared to the baseline model after one iteration \cite{Braverman}. 
 
 {\large \textbf{Approach}}
 
 Algorithm 2 calculates entropy rates for all possible words one step in the future, which is to say that it calculates entropy rates for \textit{all words in the English vocabulary}. This computation is slow. Instead of evaluating all possible outcomes, we propose using sampling approaches or heuristic approaches to choose words instead. 
 
-One such heuristic approach is beam search. Beam search is a best-first search algorithm that keeps track of the $k$ best candidates in every iteration. During each iteration, beam search considers all results from the $k$ candidates. It then chooses the $k$ best of these results for seeds in the next iteration \cite{beam-search}. We could use beam search to evaluate the entropy growth of the $k$ words most probable to come next and pick the word that best minimizes the entropy growth. Concretely, our approach is to use bounds or search algorithms like beam search to decrease the computational complexity of Algorithm 2.
+One such heuristic approach is beam search. Beam search is a best-first search algorithm that keeps track of the $k$ best candidates in every iteration. During each iteration, beam search considers all results from the $k$ candidates. It then chooses the $k$ best of these results for seeds in the next iteration \cite{beam-search}. We could use beam search to evaluate the entropy growth of the $k$ words most probable to come next and pick the word that best minimizes the entropy growth. To restate, our approach is to use bounds or search algorithms like beam search to decrease the computational complexity of Algorithm 2.
 
 {\large \textbf{Plan}}
 

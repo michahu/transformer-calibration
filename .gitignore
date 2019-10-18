@@ -1,7 +1,8 @@
-# /experiments/*
 /gpt-2-openai
 /gpt-2-fork
 /gpt-2-simple
+/experiments
+/transformers
 *.bbl
 *.blg
 *.aux
