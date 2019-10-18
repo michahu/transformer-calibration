@@ -1,7 +1,5 @@
 # transformer-calibration
 
-Author: Michael Hu
-- Computer Science junior at Princeton University
-- Minors in applied math and machine learning
-
+Michael Hu (myhu)  
+COS 397, Fall 2019  
 Advisor: Prof. Karthik Narasimhan
