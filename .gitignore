@@ -10,3 +10,4 @@
 *.fls
 *.log
 *.synctex.gz
+notebooks/.ipynb_checkpoints/
