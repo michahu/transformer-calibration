@@ -10,4 +10,11 @@
 *.fls
 *.log
 *.synctex.gz
+*.out
+*.nav
+*.sty 
+*.snm
+*.toc
+*/figures/
+*/Theme/
 notebooks/.ipynb_checkpoints/

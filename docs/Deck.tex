@@ -1,0 +1,175 @@
+\documentclass{beamer}
+\input{Theme/Packages.tex}
+\usetheme{oxonian}
+
+%--------------------------- Title Slide
+
+\title{Accelerating Entropy-Based Transformer Calibration}
+\titlegraphic{\includegraphics[width=3cm]{Theme/Logos/pton-shield.png}}
+\author{Michael Hu}
+\institute{Advisor: Karthik Narasimhan}
+\date{} %\today
+
+\begin{document}
+
+{\setbeamertemplate{footline}{} 
+\frame{\titlepage}}
+
+%---------------------------- Outline
+
+% \section*{Outline}
+% \begin{frame}{Outline}
+% \tableofcontents
+% \end{frame}
+
+%---------------------------- Motivation
+
+\section{Motivation}
+
+\begin{frame}{Motivation: Preliminaries}
+
+\begin{enumerate}
+    \item Language model: $\widehat{Pr}(w_t | w_{<t})$
+    \pause
+    \item Entropy: a measure of the amount of information being produced by a source.
+    \pause
+    \item Entropy rate: the average amount of information per word. For a sentence, sum the entropies and divide by number of words.
+    \pause
+        \begin{itemize}
+            \item "A loud and boisterous carnival is outside my window."  
+            $\Rightarrow$ High entropy rate.
+            \pause
+            \item "Nothing is outside my window." $\Rightarrow$ Low entropy rate.
+            \pause
+        \end{itemize}
+    \item Entropy blowup: when the entropy rate of text produced by a source increases over time.
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{Motivation}
+Entropy blowup does not occur in human-generated text.
+\begin{itemize}
+    \item Intuition: people don't say increasingly weird things as you talk to them.
+\end{itemize}
+\pause
+We observe entropy blowup on SOTA language models such as GPT-2. 
+\end{frame}
+
+\section{Goal}
+\begin{frame}{Goal}
+Develop a computationally efficient technique for minimizing entropy blowup in language models.
+\end{frame}
+
+\section{Related Work}
+\begin{frame}{Related Work}
+    \begin{itemize}
+        \item Analysis of language model sampling methods by Holtzman et al. \cite{holtzman2019curious}
+        \item Calibration of neural networks via temperature scaling by Guo et al. \cite{guo2017calibration}
+    \end{itemize}
+\end{frame}
+
+\section{Approach}
+\begin{frame}{Approach: Preliminaries}
+Conditional entropy: 
+\begin{align*}
+    H(w_t|w_{<t}) := \E_{w_t \sim Pr} \left[ \log \frac{1}{Pr(w_t|w_{<t})} \right]
+\end{align*}
+\pause
+Conditional one-step lookahead entropy:
+\begin{align*}
+    H(\widehat{W}_{t+1} | w_{\leq t}) := \E_{w_{t+1} \sim \widehat{Pr}} \left[\log \frac{1}{\widehat{Pr}(w_{t+1} | w_{\leq t} )} \right]
+\end{align*}
+\end{frame}
+
+\begin{frame}{Approach}
+    Stepwise calibration:
+    \begin{enumerate}
+        \item Obtain the learned language model $\widehat{Pr}$.
+        \pause
+        \item Scale $\widehat{Pr}$ by $\exp\{-\alpha \cdot H(\widehat{W}_{t+1} | w_{\leq t})\}$. Renormalize to obtain a new probability distribution $Pr_\alpha$.
+        \pause
+        \item Choose $\alpha$ such that it minimizes the cross-entropy loss between the context and $Pr_\alpha$.
+        \pause
+    \end{enumerate}
+    Use $Pr_\alpha$ as your new language model.
+\end{frame}
+
+\begin{frame}{Approach}
+    \begin{center}
+        \includegraphics[width=8cm]{figures/calibration_effect.png}
+    \end{center}
+\end{frame}
+
+\begin{frame}{Approach}
+Computational complexity:
+\begin{itemize}
+    \item V = size of vocabulary = $\sim$ 50,000 in practice
+    \item C = number of contexts = for a sentence, the number of words $\Rightarrow$ $\sim$ 10. 
+    \item T = number of words we wish to generate
+\end{itemize}
+\pause
+The cross-entropy loss takes $O(V^2C)$ time to compute. 
+
+Computing $Pr_\alpha$ takes $O(V^2)$ time $\Rightarrow$ sampling $T$ words takes $O(V^2T)$ time.
+\end{frame}
+
+\section{Implementation}
+\begin{frame}{Implementation}
+    The major contribution of this IW: we can approximate the true one step lookahead entropy by calculating lookahead entropies for the top 100 or so words in the vocabulary.
+    \pause
+
+    Impact:
+    \begin{itemize}
+        \item $V$= 50,000 $\Rightarrow$ 100. If the model used to take 8 hours to calibrate or generate $T$ words, it now takes 1 minute.
+    \end{itemize}
+\end{frame}
+
+\section{Results}
+\begin{frame}{Result 1}
+    On average, top 128 words capture $>90\%$ of the probability mass.
+    \begin{center}
+        \includegraphics[width=6cm]{figures/top128_pm.png}
+    \end{center}
+    Here: 92.8\%
+\end{frame}
+
+\begin{frame}{Result 2}
+    Generating using approximations of $Pr_\alpha$ minimizes entropy blowup.
+    \begin{center}
+        \includegraphics[width=8cm]{figures/different_calibrations.png}
+    \end{center}
+\end{frame}
+
+\begin{frame}{Result 3}
+    We observe no qualitiative drawbacks when using approximations of $Pr_\alpha$.
+    % TODO: add generations, show that they are good.
+\end{frame}
+
+\begin{frame}{Result 4}
+    A plug-and-play API for calibration, available at \url{https://github.com/mikkyhu/transformers/blob/master/examples/calibrate.py}
+\end{frame}
+
+\section{Conclusion}
+\begin{frame}{Conclusion}
+    Approximating $Pr_\alpha$ is a viable way to speed up calibration and generating from $Pr_\alpha$.
+\end{frame}
+
+\section{Future Work}
+\begin{frame}{Future work}
+    \begin{center}
+        \includegraphics[width=8cm]{figures/different_calibrations_top40.png}
+    \end{center}
+\end{frame}
+
+\section{Acknowledgements}
+\begin{frame}{Acknowledgements}
+    \begin{itemize}
+        \item Karthik Narasimhan
+        \item Cyril Zhang
+    \end{itemize}
+    \bibliographystyle{unsrt}
+    \bibliography{References}
+\end{frame}
+
+\end{document}
+
