@@ -21,3 +21,6 @@ notebooks/.ipynb_checkpoints/
 .ipynb_checkpoints
 Makefile
 README
+*.def
+*.cls
+*.bst

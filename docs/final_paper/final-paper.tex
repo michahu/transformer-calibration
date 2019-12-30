@@ -20,7 +20,7 @@
 \thispagestyle{empty}
 \doublespacing
 \begin{abstract}
-This document is intended to serve as a sample you can use for independent work reports.  We provide some guidelines on content and formatting.  They are not required, but they might be helpful.
+This independent work tackles the problem of entropy rate drift in open-ended text generation. Entropy rate drift is a phenomenon where the entropy rate of a language model deviates from the entropy rate of the context seed over time. Here, we give empirical evidence that entropy rate drift is a consequence of sampling from the tail of a probability distribution. Next, we show that the lookahead entropies of tokens in the tail are markedly higher than the most common $k$. We use these results to motivate the usage of one-step lookahead calibration, and show ways to make the technique faster and more effective. Finally, we demonstrate ways that the technique can be connected to other heuristics that improve open-ended text generation.
 \end{abstract}
 
 \section{Introduction}
