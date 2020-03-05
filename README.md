@@ -1,5 +1,5 @@
 COS 397: Junior Independent Work  
-Princeton University, Fall 2019 
+Princeton University, Fall 2019  
 Michael Hu  
 Advisor: [Karthik Narasimhan](https://www.cs.princeton.edu/~karthikn/ "Karthik's Homepage")
 
