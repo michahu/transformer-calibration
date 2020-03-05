@@ -1,8 +1,5 @@
-/gpt-2-openai
-/gpt-2-fork
-/gpt-2-simple
-/experiments
-/transformers
+# various extensions created by latex
+
 *.bbl
 *.blg
 *.aux
@@ -15,12 +12,13 @@
 *.sty 
 *.snm
 *.toc
-*/figures/
-*/Theme/
+*.def
+*.cls
+*.bst
+
+figures/
 notebooks/.ipynb_checkpoints/
 .ipynb_checkpoints
 Makefile
 README
-*.def
-*.cls
-*.bst
+

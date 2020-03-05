@@ -2,9 +2,88 @@
 
 \newcommand{\IWreport}{Fall 2019}
 \newcommand{\quotes}[1]{``#1''}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{algorithm}
+\usepackage{caption}
+\usepackage{algpseudocode}
+\usepackage{graphicx}
+\usepackage{subfig}
+\usepackage{mwe}
+\usepackage[all]{nowidow}
 
+\makeatletter
+\let\save@mathaccent\mathaccent
+\newcommand*\if@single[3]{%
+  \setbox0\hbox{${\mathaccent"0362{#1}}^H$}%
+  \setbox2\hbox{${\mathaccent"0362{\kern0pt#1}}^H$}%
+  \ifdim\ht0=\ht2 #3\else #2\fi
+  }
+%The bar will be moved to the right by a half of \macc@kerna, which is computed by amsmath:
+\newcommand*\rel@kern[1]{\kern#1\dimexpr\macc@kerna}
+%If there's a superscript following the bar, then no negative kern may follow the bar;
+%an additional {} makes sure that the superscript is high enough in this case:
+\newcommand*\widebar[1]{\@ifnextchar^{{\wide@bar{#1}{0}}}{\wide@bar{#1}{1}}}
+%Use a separate algorithm for single symbols:
+\newcommand*\wide@bar[2]{\if@single{#1}{\wide@bar@{#1}{#2}{1}}{\wide@bar@{#1}{#2}{2}}}
+\newcommand*\wide@bar@[3]{%
+  \begingroup
+  \def\mathaccent##1##2{%
+%Enable nesting of accents:
+    \let\mathaccent\save@mathaccent
+%If there's more than a single symbol, use the first character instead (see below):
+    \if#32 \let\macc@nucleus\first@char \fi
+%Determine the italic correction:
+    \setbox\z@\hbox{$\macc@style{\macc@nucleus}_{}$}%
+    \setbox\tw@\hbox{$\macc@style{\macc@nucleus}{}_{}$}%
+    \dimen@\wd\tw@
+    \advance\dimen@-\wd\z@
+%Now \dimen@ is the italic correction of the symbol.
+    \divide\dimen@ 3
+    \@tempdima\wd\tw@
+    \advance\@tempdima-\scriptspace
+%Now \@tempdima is the width of the symbol.
+    \divide\@tempdima 10
+    \advance\dimen@-\@tempdima
+%Now \dimen@ = (italic correction / 3) - (Breite / 10)
+    \ifdim\dimen@>\z@ \dimen@0pt\fi
+%The bar will be shortened in the case \dimen@<0 !
+    \rel@kern{0.6}\kern-\dimen@
+    \if#31
+      \overline{\rel@kern{-0.6}\kern\dimen@\macc@nucleus\rel@kern{0.4}\kern\dimen@}%
+      \advance\dimen@0.4\dimexpr\macc@kerna
+%Place the combined final kern (-\dimen@) if it is >0 or if a superscript follows:
+      \let\final@kern#2%
+      \ifdim\dimen@<\z@ \let\final@kern1\fi
+      \if\final@kern1 \kern-\dimen@\fi
+    \else
+      \overline{\rel@kern{-0.6}\kern\dimen@#1}%
+    \fi
+  }%
+  \macc@depth\@ne
+  \let\math@bgroup\@empty \let\math@egroup\macc@set@skewchar
+  \mathsurround\z@ \frozen@everymath{\mathgroup\macc@group\relax}%
+  \macc@set@skewchar\relax
+  \let\mathaccentV\macc@nested@a
+%The following initialises \macc@kerna and calls \mathaccent:
+  \if#31
+    \macc@nested@a\relax111{#1}%
+  \else
+%If the argument consists of more than one symbol, and if the first token is
+%a letter, use that letter for the computations:
+    \def\gobble@till@marker##1\endmarker{}%
+    \futurelet\first@char\gobble@till@marker#1\endmarker
+    \ifcat\noexpand\first@char A\else
+      \def\first@char{}%
+    \fi
+    \macc@nested@a\relax111{\first@char}%
+  \fi
+  \endgroup
+}
+\makeatother
 
-\widowpenalty=9999
+% Custom operators
+\DeclareMathOperator*{\E}{\mathbb{E}}
 
 \usepackage[normalem]{ulem}
 
@@ -12,7 +91,7 @@
 
 \title{Accelerating Entropy-Based Transformer Calibration}
 
-\author{Michael Hu \\Adviser: Prof. Karthik Narasimhan}
+\author{Michael Hu \\Advisor: Prof. Karthik Narasimhan}
 
 \date{}
 \maketitle
@@ -20,228 +99,433 @@
 \thispagestyle{empty}
 \doublespacing
 \begin{abstract}
-This independent work tackles the problem of entropy rate drift in open-ended text generation. Entropy rate drift is a phenomenon where the entropy rate of a language model deviates from the entropy rate of the context seed over time. Here, we give empirical evidence that entropy rate drift is a consequence of sampling from the tail of a probability distribution. Next, we show that the lookahead entropies of tokens in the tail are markedly higher than the most common $k$. We use these results to motivate the usage of one-step lookahead calibration, and show ways to make the technique faster and more effective. Finally, we demonstrate ways that the technique can be connected to other heuristics that improve open-ended text generation.
+
+Current state-of-the-art language models do not accurately reflect long-term properties of the baseline language. In the language model GPT-2, we independently observe the phenomenon of entropy rate drift, where the entropy rates of generations from the model increase or decrease over time. For a model well-calibrated to the English language, we would expect to see no entropy rate drift. Furthermore, we demonstrate that several popular decoding heuristics, such as top-$k$ sampling, nucleus sampling, and temperature scaling, do not protect against entropy rate drift. This motivates the use of local calibration, as proposed by Braverman et. al. \cite{Braverman}. We propose two techniques to accelerate local calibration: one by approximation, and the other by a reduction to temperature scaling. The first technique does not seem to work, and we provide some hypotheses as to why. The second technique seems more promising, inducing a drop in entropy rate increase.
+
 \end{abstract}
 
 \section{Introduction}
 
-This document is a sample you can use for formatting your independent work
-report.  An example template with all bib and supporting files can be downloaded
-from the IW website at {\em http://iw.cs.princeton.edu}.
+Language models estimate the likelihood of a certain word appearing in a sentence, conditional on the words that came before it. Recent architectural and training innovations have greatly advanced the state of the art for language modeling \cite{Radford2018ImprovingLU,BERT,XLNet}. In particular, language models can now generate lucid and relatively coherent text. For an impressive example of a language model's generation capabilities, look no further than the \textit{Ovid's Unicorn} passage, generated by GPT-2 \cite{radford2019language}.
 
-\section{Preparation Instructions}
+In terms of model architecture, GPT-2 is an autoregressive (AR) language model. AR language models produce a conditional probability distribution, predicting the likelihood of a word based on the forward or backward context. Despite the improvements of AR language models in recent years, Braverman et. al. (2019) demonstrated that many AR language models are \textit{miscalibrated}, in that repeated generations from these models tend to exhibit properties inconsistent with normal English \cite{Braverman}. Concretely, AR language models tend to suffer from \textit{entropy rate drift}, where the entropy rate of generations from the language models tend to increase or decrease over time.
 
-\subsection{Paper Formatting}
-\label{section:formatting}
+Here, we extend the work of Braverman et. al. We focus on GPT-2, arguably the most successful autoregressive language model for natural language generation to date. In Section 3, we demonstrate that in addition to GPT-2 being miscalibrated, many common decoding heuristics for improving generation, such as top-$k$ sampling, nucleus sampling, and temperature scaling, are not guaranteed  improve GPT-2's calibration either. Thus, the calibration technique proposed by Braverman et. al., which we call \textit{local calibration}, is the only technique that guarantees protections against entropy rate drift, both in theory and practice.
 
-There are no minimum or maximum length limits on IW reports.  
-We are including this template because we think it will be helpful
-for citing things properly and for including figures into formatted
-text.  If you are using \LaTeX~\cite{lamport94} 
-to typeset your paper, then we strongly suggest
-that you start from the template available at
-http://iw.cs.princeton.edu -- this
-document was prepared with that template.  
-If you are using a different software package to typeset your paper, 
-then you can still use this document as a reasonable sample of 
-how your report might look.  Table~\ref{table:formatting} is a suggestion
-of some formatting guidelines, as well as being an example of how to
-include a table in a Latex document.
+Local calibration only requires black-box access to the conditional probability distributions learned by a language model; thus, the technique can be applied to any AR language model. However, a drawback of local calibration is its computational complexity, which we analyze in Section 4. Next, we propose two methods for reducing the computational complexity of local calibration. The first method uses approximation, which we motivate from properties of English. The second method reduces local calibration to temperature scaling, a single-parameter technique used in both neural network calibration and decoding for natural language generation \cite{temperature,guoTempCalibration}. Both methods provide significant speed increases to local calibration. Our first method does not work well in practice, and we discuss possible reasons why. Our second method results in a modest drop in entropy rate increase.
 
-\begin{table}[hbt]
-  \centering
-  \begin{tabular}{|l|l|}
-    \hline
-    \textbf{Field} & \textbf{Value}\\
-    \hline
-    \hline
-    Paper size & US Letter 8.5in $\times$ 11in\\
-    \hline
-    Top margin & 1in\\
-    \hline
-    Bottom margin & 1in\\
-    \hline
-    Left margin & 1in\\
-    \hline
-    Right margin & 1in\\
-    \hline
-    Body font & 12pt\\
-    \hline
-    Abstract font & 12pt, italicized\\
-    \hline
-    Section heading font & 14pt, bold\\
-    \hline
-    Subsection heading font & 12pt, bold\\
-    \hline
-  \end{tabular}
-  \caption{Formatting guidelines. }
-  \label{table:formatting}
-\end{table}
+\section{Background}
 
-\textbf{Please ensure that you include page numbers with your
-submission}. This makes it easier for readers to refer to
-different parts of your paper when they provide comments.
+\subsection{Preliminaries: Information Theory and Local Calibration}
 
-We highly recommend you use bibtex for managing your references and citations.  You can add bib entries to a references.bib file throughout the semester (e.g., as you read papers) and then they will be ready for you to cite when you start writing the report.  If you use bibtex, please note that the references.bib file provided in the template example includes some format-specific incantations at the top of the file.  If you substitute your own bib file, you will probably want to include these 
-incantations at the top of it.
+Section 2.1 summarizes ideas in Braverman et. al. \cite{Braverman}. We begin with a crash course on information theory. Let $Pr(W_{1:T})$ be the true distribution of a $T$-length sentence composed of words $W_1$ through $W_T$. The words are capitalized to denote their identity as random variables. 
 
-\subsection{Citations and Footnotes}
+\begin{align*}
+    H(Pr) := \E_{w_{1:T} \sim Pr} \left[\log \frac{1}{Pr(W_{1:T} = w_{1:T})}\right]
+\end{align*}
 
-There are various reasons to cite prior work and include it as references in your bibliography.  For example, If you are improving upon 
-prior work, you should include
-a full citation for the work in the bibliography \cite{nicepaper,nicepaper2}. 
-You can also cite information that is used as background or
-explanation\cite{Salzberg:2005}.  In addition to citing scholarly papers or books, you can
-also create bibtex entries for webpages or other sources.  Many online
-databases allow you to download a premade bibtex entry for each paper
-you access.  You can simply copy-paste these into your references.bib
-file.
+is the \textit{entropy} of a distribution $Pr$. Entropy, first introduced by Claude Shannon \cite{shannon-ie}, is a measure of how much information is telegraphed by an event. Intuitively, low probability events convey high information, and vice versa -- if a low probability event occurs, that tends to betray more information about the underlying system. The \textit{entropy rate} of a distribution is defined as EntRate$(Pr) := \frac{1}{T}H(Pr)$. Here, entropy rate corresponds to the average entropy per word. \textit{Entropy rate drift} occurs when the entropy rate of a model's generations increase or decrease over time. \textit{Perplexity} $:= e^{H(Pr(W_t|w_{<t}))}$ can be interpreted as as the number of plausible choices for the next word. Perplexity is the exponentiated entropy of the conditional distribution $Pr(W_t | w_{<t})$. Note that if perplexity increases over time, then the entropy rate is increasing as well. 
 
-Sometimes you want to footnote something, such as a web
-site.\footnote{http://www.cs.princeton.edu}  Note that the footnote
-number comes after the punctuation.
+Our language model learns a distribution $\widehat{Pr}$ over the possible $T$-length sequences. Minimizing \textit{cross entropy loss} is the standard language model objective. Cross entropy loss is defined as:
+\begin{align*}
+    CE(Pr || \widehat{Pr}) := \E_{w_{1:T} \sim P} \left[\log \frac{1}{\widehat{Pr}(w_{1:T})}\right]
+\end{align*}
 
-\subsection{Figures and Tables.}
+Last, we define the conditional one-step \textit{lookahead entropy} $H(W_{t+1} | w_{\leq t})$. $H(W_{t+1} | w_{\leq t})$ is conditioned on the word $w_t$ and its backward context $w_{<t}$.
+\begin{align*}
+    H(W_{t+1} | w_{\leq t}) = \E_{w_{t+1} \sim \widehat{Pr}(\cdot | w_{\leq t})} \left[ \log \frac{1}{\widehat{Pr}(w_{t+1} | w_{\leq t})}\right]    
+\end{align*}
 
-Figure \ref{fig:gray} shows an example of how to include a figure in
-your report.  
-Ensure that the figures and
-tables are legible.  Please also ensure that you refer to your
-figures in the main text. Make sure that your figures will be legible
-in the expected forms that the report will be read.  If you expect someone
-to print it out in gray-scale, then make sure the figures are legible 
-when printed that way.  
+\begin{algorithm}
+    \renewcommand{\thealgorithm}{2}
+    \caption{Local Entropy Rate Calibration}
+    \begin{algorithmic}[1]
+    \State Input: Model $\widehat{Pr}^{(\epsilon)}$
+    \State Define $\widehat{Pr}_\alpha$, where:
+    \begin{align*}
+        \widehat{Pr}_\alpha (w_{1:T}) = \widehat{Pr}_\alpha(w_1) \cdot \widehat{Pr}_\alpha(w_2 | w_1) ...
+    \end{align*}
+    and:
+    \begin{align*}
+        \widehat{Pr}_\alpha(w_t | w_{<t}) &= \widehat{Pr} (w_t | w_{<t}) \cdot \exp \{ -\alpha \cdot H(W_{t+1} | w_{\leq t})\} / Z_\alpha, \text{ where} \\
+        Z_\alpha &:= \sum_{w_{1:T}} \exp \{-\alpha \cdot H(W_{t+1} | w_{\leq t})\} \cdot \widehat{Pr}(w_{1:T})
+    \end{align*}
+    \State Fit $\alpha^*: \alpha^* = \arg \min_\alpha CE(Pr || \widehat{Pr}_\alpha)$
+    \State \Return $\alpha^*$
+    \end{algorithmic}
+    \label{Alg2}
+\end{algorithm}
 
-\begin{figure}[hbt]
-\centering
-\includegraphics[width=0.75\linewidth]{gray.jpg}
-\caption{This is a gray image.}
-\label{fig:gray}
+We are now ready to discuss Algorithm 2 on page \pageref{Alg2}, the method we hereby refer to as \textit{local calibration} \cite{Braverman}. The input to Algorithm 2 is $\widehat{Pr}^{(\epsilon)}$, a smoothed version of $\widehat{Pr}$, where a small amount of probability mass is distributed to each possible word. (This is a simplifying assumption, done to avoid dividing by zero when computing the cross entropy loss.) Local calibration guarantees that the returned distribution $\widehat{Pr}_\alpha$ improves in terms of entropy rate drift compared to $\widehat{Pr}^{(\epsilon)}$.
+
+The intuition of local calibration is to apply a penalty or bonus to each probability $\widehat{Pr}(w_t | w_{<t})$ in the conditional distribution. This penalty or bonus is based on each word $w_t$'s respective lookahead entropy $H(W_{t+1} | w_{\leq t})$ (Algorithm 2, step 2). Depending on $\alpha$, lookahead entropies will induce a larger or smaller penalty. The algorithm then tunes $\alpha$, such that the base objective of the language model is unaffected (Algorithm 2, step 3). For full details and theoretical properties of local calibration, the reader is deferred to the paper itself \cite{Braverman}.
+
+\subsection{Preliminaries: Natural Language Generation and Decoding Heuristics}
+
+Language models generally predict tokens, or subwords, instead of words themselves. Suppose we wish to generate a $T$-token passage of text from an AR language model, given some context $w_{<t}$. One possible procedure is to seed the language model with context $w_{<t}$, obtain the conditional distribution $Pr(W_t|w_{<t})$, sample a token $w_t$ from the conditional distribution, concatenate $w_t$ to the context, and repeat. 
+
+Naively sampling in the manner above can lead to nonsensical output \cite{holtzman2019curious}; in practice, we rarely sample tokens from $Pr(W_t|w_{<t})$ directly. Instead, we usually pass $Pr(W_t|w_{<t})$ through a decoding heuristic, such as top-$k$ sampling, nucleus sampling, or temperature scaling \cite{radford2019language,holtzman2019curious,guoTempCalibration}. These techniques tend to improve generations, and are discussed further in Section 3.
+
+Other popular decoding techniques include greedy decoding and beam search \cite{greedyBeam}. However, these methods are not well-suited for open-ended language generation, our current setting -- greedy decoding and beam search are more commonly used in machine translation. For example, beam search tends to work better when the length of output is predicted in advance \cite{beam-search-length}. But for open-ended generation, the length of output can be arbitrary, as long as the output is cogent. Furthermore, Holtzman et. al. (2019) showed that greedy decoding and beam search can cause GPT-2 to repeatedly output the same phrase, a failure state \cite{holtzman2019curious}. For these reasons, we do not further analyze greedy decoding and beam search as decoding strategies in this study.
+
+In a way, this independent work can be interpreted as building decoding heuristics influenced by local calibration. We propose two such heuristics in Sections 4 and 5. We do not call local calibration itself a heuristic, as the technique is derived from first principles and leads to provable improvements over a baseline.
+
+\subsection{Other work}
+
+Methods like local calibration treat the language model as a black-box accessor of conditional distributions $Pr(W_t|w_{<t})$. This would not be practical without language models that are quite accurate already. The Transformer architecture has found wide applicability in language modeling \cite{attention17}, and many current language models contain Transformer or attention modules, including GPT-2 \cite{BERT,radford2019language,XLNet,transformer-xl}. Another influential idea in language modeling is the ``pre-train, fine-tune'' paradigm, where language models are first pre-trained on a large corpus of data, then selectively fine-tuned for a specific task. Unsupervised pre-training induces language models to improve on a wide variety of tasks without explicit instruction \cite{Radford2018ImprovingLU}.
+
+Outside of autoregressive language modeling, another type of language model is the autoencoding (AE) language model. Autoencoding language models seek to recover ground truth values of compressed or corrupted input. In other words, these models ``fill in the blanks.'' Popular AE models include BERT and its variants \cite{BERT}, and recent work from Wang. et. al. demonstrates how to generate text from BERT \cite{BERTMouth}. However, since AE models do not produce an explicit probability distribution, local calibration cannot be applied to AE language models as is. Local calibration is currently limited to AR language models.
+
+Guo et. al. demonstrated that temperature scaling is an effective way of calibrating neural networks on standard computer vision and NLP datasets \cite{guoTempCalibration}. Temperature scaling is a single parameter version of Platt Scaling \cite{platt99}. 
+
+\section{Why Calibration is Necessary}
+
+Braverman et. al showed that perplexity tends to increase with successive generations from AR language models \cite{Braverman}. We independently verify these results for GPT-2 (Figure \ref{entropy-blowup}, blue lines). For a well-calibrated model, we would expect to see little to no fluctuation in the perplexity, resulting in a horizontal line from left to right. However, these results are obtained by the naive sampling method described in Section 2.2, where we choose tokens from the entire conditional probability distribution $Pr(W_t|w_{<t})$. In practice, users do not sample from the entire distribution. Instead, they tend to alter the distribution using a decoding heuristic and sample from the altered distribution instead. Decoding heuristics help avoid issues such as repetition and hallucination: repetition, where the model repeatedly outputs the same phrase, and hallucination, where the model's output is nonsense \cite{holtzman2019curious}.
+
+Here, we provide a short exposition of three common decoding heuristics -- top-$k$ sampling, nucleus sampling, and temperature scaling -- and show that entropy rate drift occurs for different hyperparameter values for all three heuristics. Mathematical formalisms are adapted from Holtzman et. al. \cite{holtzman2019curious}. In particular, two recent hyperparameter choices for generation are both miscalibrated with respect to entropy rate drift \cite{radford2019language,holtzman2019curious}. 
+
+\begin{figure}
+    \centering
+    \subfloat[Perplexity curves for top-k sampling.]{\includegraphics[width=.5\textwidth]{figures/f1_entropy_blowup.png}}
+    \subfloat[Perplexity curves for temperature scaling.]{\includegraphics[width=.5\textwidth]{figures/f1_2.png}}
+    \caption{Perplexity curves of various decoding techniques for natural language generation. Current uses of top-k sampling tend to set $k \leq 40$, which would correspond to the red line in Figure 1(a). Figures 1(a) and 1(b) demonstrate that entropy rate may decrease as well as increase.}
+    \label{entropy-blowup}
 \end{figure}
 
-In Section~\ref{section:formatting}, an example of a table was given.
-(Note that the ``S'' in Section is capitalized.  Here's one more
-example - see Table~\ref{table:data}.
-
-\begin{table}[hbt]
-  \centering
-  \begin{tabular}{|l|l|} \hline
-    \textbf{Some field} & \textbf{Another field}\\\hline
-    200          &  10000 \\ \hline 
-    400          &  20000 \\ \hline 
-    800          &  40000 \\ \hline 
-    1600        &  80000 \\ \hline 
-    3200        &  160000 \\ \hline 
-    6400        &  320000 \\ \hline 
-  \end{tabular}
-  \caption{Some data in a table. }
-  \label{table:data}
+\begin{table}[ht]
+    \centering
+    \begin{tabular}[t]{cc}
+    $k$ & $\Delta e^H$  \\
+    \hline
+    \hline
+    $k$ = full & +5.999 \\
+    $k$ = 2048 & -3.780 \\
+    $k$ = 512 & -7.804 \\
+    $k$ = 40 & -15.791 
+    \end{tabular}
+    \caption{Average change in perplexity for various $k$ over 90 generations.}
+    \label{topk-perplexity}
+    \begin{tabular}[t]{cc}
+    $T$ & $\Delta e^H$ \\
+    \hline
+    \hline
+    $T$ = 1 & +5.999\\
+    $T$ = 0.5 & -33.514 \\
+    $T$ = 1.1 & +51.532
+    \end{tabular}
+    \caption{Average change in perplexity for various temperatures $T$ over 90 generations.}
+    \label{temp-perplexity}
 \end{table}
 
+\subsection{Top-k Sampling}
 
-Here's an example that shows how you can have side-by-side figures -
-see Figure~\ref{fig:side-a} and Figure~\ref{fig:side-b}.  (Note that
-the the ``F'' in Figure is capitalized. 
+Top-$k$ sampling truncates $\widehat{Pr}(W_t|w_{<t})$ to the top-$k$ most likely tokens. It then renormalizes the remaining $k$ tokens into a probability distribution and samples from the new distribution. Formally, let $\widehat{Pr}(W_t|w_{<t})$ be the distribution over the next token. Let $V$ be the vocabulary set, and let $V_k := \arg \max_{V'} \sum_{w_t \in V'} \widehat{Pr}(w_t | w_{<t})$, where $|V'| = k$ and $V' \subseteq V$. 
 
-\begin{figure}[htbb]
-\begin{minipage}[b]{0.5\linewidth}
-\centering
-\includegraphics[width=.75\linewidth]{checkerboard-squares-black-white.jpg}
-\caption{Plain checkerboard.}
-\label{fig:side-a}
-\end{minipage}
-\hspace{0.5cm}
-\begin{minipage}[b]{0.5\linewidth}
-\centering
-\includegraphics[width=.75\linewidth]{swirl-squares-black-white.jpg}
-\caption{Cool checkerboard.}
-\label{fig:side-b}
-\end{minipage}
+We define a new probability distribution $\widehat{Pr}^{(k)}$:
+\begin{align*}
+    \widehat{Pr}^{(k)} := \begin{cases}
+        \frac{\widehat{Pr}(w_t | w_{<t})}{\sum_{w_t \in V_k} \widehat{Pr}(w_t |w_{<t})} & \forall w_t \in V_k \\
+        0 & \text{otherwise}
+    \end{cases}
+\end{align*}
+
+Top-$k$ sampling then chooses a token from $\widehat{Pr}^{(k)}$. Recent papers usually set $k$ to around 10 or 40, and resulting generations are syntactically correct and cogent \cite{k10,radford2019language}. But empirically, we observe that setting $k$ to 40 causes perplexity to decrease over time (Figure \ref{entropy-blowup}), indicating that top-40 sampling is miscalibrated. Over 90 generations, top-40 sampling induces an average perplexity decrease of 15.791 (Table \ref{topk-perplexity}). All experimental details are in the appendix.
+
+\subsection{Nucleus Sampling}
+
+Nucleus sampling, or top-$p$ sampling, truncates the probability distribution to the minimal subset of tokens that make up $100p$\% of the probability mass ($p \in [0, 1]$). Ceteris paribus as above, let $V_p \in V$ be the smallest set such that $\sum_{w_t \in V_p} \widehat{Pr}(w_t | w_{<t}) \geq p$. 
+
+We define a new probability distribution $\widehat{Pr}^{(p)}$:
+\begin{align*}
+    \widehat{Pr}^{(p)} := \begin{cases}
+        \frac{\widehat{Pr}(w_t | w_{<t})}{\sum_{w_t \in V_p} \widehat{Pr}(w_t |w_{<t})} & \forall w_t \in V_p \\
+        0 & \text{otherwise}
+    \end{cases}
+\end{align*}
+
+Top-$p$ sampling then chooses a token from $\widehat{Pr}^{(p)}$. Here, note that top-$p$ sampling is simply a dynamic version of top-$k$ sampling. Thus, top-$p$ sampling suffers from similar issues. For example, Holtzman et. al. used $p=0.9$ for their own generations \cite{holtzman2019curious}. Figure \ref{fig:512-mass} demonstrates that $p=0.9$ is equivalent to approximately $k=512$. On average, $k=512$ suffers from an average perplexity decrease of 7.804 (Table \ref{topk-perplexity}).
+
+\subsection{Temperature Scaling}
+
+Language models like GPT-2 do not directly output a probability distribution. To obtain a distribution, the outputs of the neural network $u_{1:|V|}$, called logits, are passed through a softmax function. Temperature scaling simply divides the logits by a constant $T \in (0, \infty)$.
+
+Concretely:
+\begin{align*}
+    \widehat{Pr}^{(T)}(w_t|w_{<t}) := \frac{\exp \{ u_t / T\}}{\sum_{i = 1}^{|V|} \exp\{u_i / T\}}
+\end{align*}
+
+We then sample from $\widehat{Pr}^{(T)}$. Note that for $T=1, \widehat{Pr}^{(T)} = \widehat{Pr}$. To increase diversity in word choice, one sets $T > 1$. To decrease diversity, one sets $T \in (0, 1)$. Figure 1(b) shows model perplexity for $T=0.5, 1,$ and 1.1. All three choices are miscalibrated.
+
+\subsection{Analysis}
+
+Calibration with respect to entropy rate may be possible using one or more of top-$k$ sampling, top-$p$ sampling, or temperature scaling. But it is unclear how to choose a hyperparameter for these generation heuristics, such that entropy rate drift does not occur. Furthermore, these hyperparameters are usually chosen for reasons other than mitigating entropy rate drift; they are not designed for this purpose. Entropy rate naturally increases without any generation heuristic, and many current usages of generation heuristics overcorrect entropy rate drift as a side effect, such that entropy rate actually decreases over time. From our data, we draw two conclusions. First, local calibration is the only technique, to our knowledge, that provably mitigates entropy rate drift. Second, there exists a ``sweet spot'' for calibration. A heavy-handed adjustment via decoding heuristic may actually cause entropy rates to decrease instead of increase, which is also undesirable.
+
+\section{Accelerating Calibration via Approximation}
+
+The main challenge of using local calibration, or Algorithm 2, is its computational complexity. As a baseline, let us consider the computational complexity of generating $T$ successive tokens from GPT-2, given $C$ tokens of context. If we were to use a generation heuristic as above, we perform a single inference per token to obtain $\widehat{Pr}$. Passing $\widehat{Pr}$ through a decoding heuristic to obtain $\widehat{Pr}^{(\cdot)}$ then takes constant time, for an overall complexity of $O(T)$ in the number of inferences to GPT-2.
+
+The same process takes $O(VC + VT)$ inferences for local calibration, where $V$ is the size of the vocabulary. We first consider calibration itself. Computing $\widehat{Pr}_\alpha$ takes $O(V)$ inferences. We perform one inference per lookahead entropy, so it takes $O(V)$ inferences to compute $Z_\alpha$. To compute the cross entropy loss, we must compute $\widehat{Pr}_\alpha$ for all of the $C$ possible contexts. Thus, the cost for calibration is $O(VC)$ inferences.
+
+We obtain $\alpha^*$ from calibration. To generate $T$ tokens, we must compute $\widehat{Pr}_{\alpha^*}$ each time, for a total cost of $O(VT)$ inferences during generation. The overall cost of generating $T$ tokens from $C$ tokens of context is then $O(VC+VT)$. The vocabulary size $V$ of GPT-2 is 50,000, and most model vocabularies are in the range of $10^4$ to $10^5$ \cite{radford2019language,attention17}. Therefore, local calibration is around 50,000 times slower than sampling using a heuristic, depending on the language model. For local calibration to be usable in practice, we require some way to reduce the number of inferences performed. 
+
+\subsection{Lookahead Entropy Approximation: Approach and Implementation}
+
+Here, we propose a method for speeding up calibration by calculating a few lookahead entropies and approximating the rest. As discussed on the previous page, the $O(V)$ factor in $O(VC+VT)$ comes from calculating lookahead entropies. Thus, instead of computing $H(W_{t+1} | w_{\leq t})$ for all tokens, we propose doing so for only the top $k$ most likely tokens. We then calculate $\widebar{H}$, the mean of these $k$ lookahead entropies. For any token that does not fall within the top $k$, we replace its lookahead entropy with $\widebar{H}$. Using this approximation reduces the number of required inferences by $\frac{|V|}{k}$, which dramatically improves runtimes in practice. For example, if we use $k=500$ with GPT-2, then we perform $\frac{50,000}{500} = 100$-fold fewer inferences compared to local calibration, which is roughly equivalent with a 100-fold decrease in runtime. We formally describe this calibration method in Algorithm 3.
+
+\begin{algorithm}
+    \renewcommand{\thealgorithm}{3}
+    \caption{Local Entropy Rate Calibration with Approximation}
+    \begin{algorithmic}[1]
+    \State Input: Model $\widehat{Pr}^{(\epsilon)}$, $k \in [1, |V|]$
+    \State Define $\widehat{Pr}'_\alpha$, where:
+    \begin{align*}
+        \widehat{Pr}'_\alpha (w_{1:T}) = \widehat{Pr}'_\alpha(w_1) \cdot \widehat{Pr}'_\alpha(w_2 | w_1) ...
+    \end{align*}
+    \State Let $V_k := \arg \max_{V'} \sum_{w_t \in V'} \widehat{Pr}(w_t | w_{<t})$, where $|V'| = k$ and $V' \in V$. $Z_\alpha$ remains the normalization constant.
+    \begin{align*}
+        \widebar{H} &:= \frac{1}{k} \sum_{w_t \in V_k} H(W_{t+1} | w_t, w_{<t}) \\
+        \widehat{Pr}'_\alpha(w_t | w_{<t}) &= \begin{cases}
+            \widehat{Pr} (w_t | w_{<t}) \cdot \exp \left( -\alpha \cdot H(W_{t+1} | w_{\leq t})\right) / Z_\alpha & \forall w_t \in V_k \\
+            \widehat{Pr} (w_t | w_{<t}) \cdot \exp \left( -\alpha \cdot \widebar{H}\right) / Z_\alpha & \text{otherwise}
+        \end{cases}
+    \end{align*}
+    \State Fit $\alpha^*: \alpha^* = \arg \min_\alpha CE(Pr || \widehat{Pr}'_\alpha)$
+    \State \Return $\alpha^*$
+    \end{algorithmic}
+\end{algorithm}
+
+As $k \to |V|$, $\widehat{Pr}'_\alpha \to \widehat{Pr}_\alpha$. For large $k$, Algorithm 3 scales most of the probability mass according to its respective lookahead entropy. Language tends to follow Zipf's Law \cite{ZipfLaw}, meaning that most conditional distributions $\widehat{Pr}(W_t|w_{<t})$ look like Figure \ref{fig:avg-distr}, where probability mass is concentrated in the top 10 to 30 tokens or so. We quantify the level of concentration in Figure \ref{fig:512-mass}: after computing the proportion of probability mass captured by the top 512 tokens for 300,000 contexts in the Google Billion Words (GBW) corpus, we observe that on average, the top 512 tokens represent 90.7\% of the probability mass (Figure 3). Therefore, we expect that for $k=512$, Algorithm 3 properly scales around 90\% of the probability mass. For the remaining 10\%, we hope that $\widebar{H}$ is a reasonable estimate for the true lookahead entropy.
+
+We implemented the minimization step in Algorithm 2 and 3 using Newton's method for fast convergence. In our experience, Newton's method converges to a minimum within 4 to 6 iterations. Fast convergence is crucial here, as an extra iteration of local calibration can take more than a day to compute. We initially tried gradient descent but found that it converged too slowly.
+
+\begin{figure}
+    \centering
+    \includegraphics{figures/f2_avg_distribution.png}
+    \caption{Likelihoods of the top 50 tokens of a learned distribution. To obtain the conditional distribution, a context $w_{<t}$ was chosen at random from the Google Billion Words corpus. The majority of the distribution's probability mass is captured within the top 10 tokens.}
+    \label{fig:avg-distr}
 \end{figure}
 
-\subsection{Double Quotes.}
+\begin{figure}
+    \centering
+    \includegraphics{figures/f3_512_counts.png}
+    \caption{Sampling distribution of the proportion of probability mass captured by the top 512 most likely tokens. On average, the top 512 tokens capture 90.7\% of the probability mass.}
+    \label{fig:512-mass}
+\end{figure}
 
-Latex double quotes are not the same as the double quote key on your
-keyboard. The standard way of writing quotes and double quotes in
-LaTeX is with `` and '' not with " and ".   
+\subsection{Results}
 
-Now that may be confusing, so you may want to use the \textbackslash\{quotes\} command.  For
-example \quotes{The quick brown fox.}
+\begin{figure}[!ht]
+    \centering
+    \subfloat[Generation using $k$=64, $\alpha$ = 0.4082.]{\includegraphics[width=.5\textwidth]{figures/f5_1.png}}
+    \subfloat[Generation using $k$=512, $\alpha$ = 0.0859]{\includegraphics[width=.5\textwidth]{figures/f5_2.png}}\\
+    \subfloat[Full generation, $\alpha$ = 0.0339]{\includegraphics[width=.5\textwidth]{figures/f5_3.png}}
+    \subfloat[Lines of best fit for all curves. Full calibration works as expected, reducing entropy rate drift. Generation using $k=64, 512$ increases upward entropy rate drift.]{\includegraphics[width=.5\textwidth]{figures/f5_4.png}}
+    \caption{Calibration using different values of $k$. The ``peakiness'' of the calibration graphs are due to sample size -- we averaged across 128 samples for each calibration trial and 10,000 samples for no calibration.}
+    \label{fig:alg3results}
+ \end{figure}
 
+Our approximation approach did not work in practice. In addition to $k=512$, which we chose from empirical results, we tried several other values of $k$ in powers of 2 greater and smaller than 512. (We use powers of 2 to better align virtual processes with physical processes: if we set $k=65$, we may as well set $k=128$, as we are using the same number of physical processes.) We consider $\alpha^*$ from local calibration as the ground truth $\alpha^*$ value. The $\alpha^*$ values we obtained for different values of $k$ were within one decimal place of the ground truth value, at best. Ideally, we would like to see higher accuracy in the approximations. $\alpha^*$ values and runtimes are reported in Table \ref{approximation-results}. Runtimes for this approach were significantly faster than local calibration, but at the cost of accuracy. $k = 512$ was closest to the $\alpha^*$ returned by local calibration.
 
+\begin{table}[ht]
+    \centering
+    \begin{tabular}[t]{ccc}
+    $k$ & $\alpha^*$ & Runtime \\
+    \hline
+    \hline
+    Local calibration (ground truth) & 0.0339 & 5 days, 8 hours  \\
+    \hline
+    $k$ = 64 & 0.4082 & 19 minutes \\
+    $k$ = 512 & 0.0859 & 1 hour, 12 minutes\\
+    $k$ = 1024 & -0.0206 & 2 hours, 32 minutes\\
+    $k$ = 2048 & -0.0232 & 4 hours, 56 minutes\\
+    $k$ = 4096 & -0.0298 & 9 hours, 43 minutes
+    \end{tabular}
+    \caption{All calibrations performed on a 100-line corpus randomly sampled from GBW.}
+    \label{approximation-results}
+\end{table}% 
 
-\subsection{Main Body.}
+Generation from $\widehat{Pr}'_\alpha$ is formally described in Algorithm 4 on page \pageref{alg4}. We kept $k$ consistent from calibration to generation: if we chose to approximate using $k=64$ during calibration, then we also used $k=64$ during generation. The entropy behavior for $k=64$, $k=512$, and local calibration are shown in Figure \ref{fig:alg3results}. Local calibration decreases the upward entropy rate drift, while $k=64$ and $k=512$ increase the upward entropy rate drift. 
 
-Avoid bad page or column breaks in
-your main text, i.e., last line of a paragraph at the top of a
-column or first line of a paragraph at the end of a column. If you
-begin a new section or sub-section near the end of a column,
-ensure that you have at least two (2)  lines of body text on the same
-column. 
+We would define Algorithm 3 as successful, had it consistently approximated the $\alpha^*$ of Algorithm 2 to within 2 decimal places. We would define Algorithm 4 as successful, had it decreased the upwards entropy rate drift of the baseline (Figure \ref{fig:alg3results}, blue lines). As it stands, neither algorithm was successful. We discuss potential reasons for failure in Section 4.3.
 
-\section{Outline}  
-The following is a possible outline for your paper.
-\subsection{Introduction}
-\begin{itemize}
-\item Motivation and Goal (The goal of this project is...)
-\item Overview of challenge and previous work 
-\item Approach 
-\item Summary of implementation
-\item Summary of results
-\end{itemize}
+\begin{algorithm}
+    \renewcommand{\thealgorithm}{4}
+    \caption{Generation with Approximation}
+    \begin{algorithmic}[1]
+    \State Input: Model $\widehat{Pr}$, $k \in [1, |V|]$, generation length $T$,$\alpha^*$
+    \For {$t = 1:T$}
+    \State Let $V_k := \arg \max_{V'} \sum_{w_t \in V'} \widehat{Pr}(w_t | w_{<t})$, where $|V'| = k$ and $V' \in V$. 
+    \begin{align*}
+        \widebar{H} &:= \frac{1}{k} \sum_{w_t \in V_k} H(W_{t+1} | w_t, w_{<t}) \\
+        \widehat{Pr}_{\alpha^*}(w_t | w_{<t}) &= \begin{cases}
+            \widehat{Pr} (w_t | w_{<t}) \cdot \exp \left( -\alpha \cdot H(W_{t+1} | w_{\leq t})\right) / Z_\alpha & \forall w_t \in V_k \\
+            \widehat{Pr} (w_t | w_{<t}) \cdot \exp \left( -\alpha \cdot \widebar{H}\right) / Z_\alpha & \text{otherwise}
+        \end{cases}
+    \end{align*}
+    \State Sample $w_t \sim \widehat{Pr}_{\alpha^*}$
+    \EndFor
+    \State \Return $w_1, w_2, ..., w_t$
+    \end{algorithmic}
+    \label{alg4}
+\end{algorithm}
 
-\subsection{Problem Background and Related Work}
-\begin{itemize}
-\item Survey of prior work with similar goals 
-\item For each previous approach, explain what has been done and why it does not meet your goal
-\end{itemize}
+\subsection{Discussion}
 
-\subsection{Approach}
-\begin{itemize}
-\item Key novel idea
-\item Why it is a good idea
-\end{itemize}
+\begin{figure}
+    \centering
+    \includegraphics{figures/f4_lookahead_ents.png}
+    \caption{Lookahead entropy values for different tokens, sorted from most likely to least likely. Lookahead entropies are weakly correlated with token likelihood (0.262). Critically, tokens in the tail of the distribution continue to have low lookahead entropies.}
+    \label{fig:H-distr}
+\end{figure}
 
-\subsection{Implementation}
-\begin{itemize}
-\item System overview (flow chart of key steps?)
-\item Subsection for each step or issue you addressed
-\begin{itemize}
-\item Problem statement
-\item Possible approaches
-\item Chosen approach and why
-\item Implementaton details
-\end{itemize}
-\end{itemize}
+Here, we offer some hypotheses on why Algorithms 3 and 4 fail to improve entropy rate drift. Figure \ref{fig:H-distr} on page \pageref{fig:H-distr} visualizes the lookahead entropies of each token for a given context, sorted from most likely to least likely. Although most lookahead entropy values are clustered in the 4 to 6 range, there exists significant density in the 0 to 4 range as well. Furthermore, lookahead entropy is positively correlated with token rank, with correlation coefficient of 0.262.
 
-\subsection{Evaluation}
-\begin{itemize}
-\item Experiment design...
-\item Data...
-\item Metrics...
-\item Comparisons...
-\item Qualitative results...
-\item Quantitative results...
-\end{itemize}
+Thus, perhaps using the mean as an approximation is a bad idea, given the data. We define the tail of the distribution as all the tokens not within the top $k$. Given the positive correlation, the population mean will be greater than the sample mean, since the sample is drawn from the initial $k$ tokens. Tokens in the tail of the distribution will tend to have higher lookahead entropies, and this is not accounted for in the approximation.
 
-\subsection{Summary}
-\begin{itemize}
-\item Conclusions...
-\item Limitations...
-\item Future work...
-\end{itemize}
+Second, the approximation treats all values in the tail equally. But as we can see from Figure 5, there continue to exist tokens with very low (near zero) lookahead entropies in the tail. Penalizing these tokens the same amount as tokens with large lookahead entropies potentially muddies the effects of calibration. As a thought experiment, consider two tokens in the tail, both with the same probability. Token one has high lookahead entropy, and token two has low lookahead entropy. For $\alpha > 0$, Algorithm 2 assigns token one a higher penalty than token two, which is the desired behavior -- we want to avoid token one, as it is more likely to lead to entropy rate drift. Conversely, Algorithm 3 assigns both tokens the same penalty, meaning that both tokens remain equally likely to be sampled.
 
+Algorithm 3 assigns the same penalty to all tokens in the tail. Given the variability of lookahead entropies, this may not have been a good idea. The initial hope was that assigning dynamic penalties to the top $k$ tokens would be sufficient, and calibration accuracy would not suffer much. Similarly, Algorithm 4 also suffers from a distributional tail that is poorly calibrated. This is problematic, as sampling from the tail becomes increasingly likely with successive generations. For example, if we set $k$ = 512, sampling from the tail is expected to occur within the first 10 generations about 65\% of the time\footnote{$k$ = 512 captures approximately 90\% of the probability mass (Figure \ref{fig:512-mass}). $1 - (0.9)^{10} = 0.65.$}. Sampling poorly calibrated tokens from the tail may have set off chain reactions of subsequently poor samplings, leading to exacerbated entropy rate drift.
 
-\section{Ethics}
+\section{Accelerating Calibrated Generation via Temperature Scaling}
 
-Your independent work report should abide by the basic standards of scholarly ethics and by the Princeton Honor Code. If you have any doubts about how to cite
-other work, how to quote or include text or images from other works, or other issues, please discuss them with your project adviser or with the IW coordinators. 
+Here, we analyze the relationship between local calibration and temperature scaling. From this analysis, we derive a method that selects a temperature for generation. We seek to connect local calibration with temperature scaling, such that local calibration can be used to choose a temperature that mitigages entropy rate drift.
 
+We can think of both local calibration and temperature scaling as applying some perturbation to the language model's output logits $u_{1:|V|}$ to obtain a new set of logits $u_{1:|V|}'$. Both techniques then softmax the logits $u_{1:|V|}'$ to obtain a probability distribution. From Section 3.3, we observe that temperature scaling applies the transformation $u_{1:|V|}' = u_{1:|V|} / T$.
 
+By comparison, local calibration applies the transformation $u_{1:|V|}' = u_{1:|V|} - \alpha^* \cdot \vec{H}$, where $\vec{H}$ is the $|V|$-length vector of lookahead entropies. A short derivation is below.
+\begin{align*}
+    \widehat{Pr}_\alpha(w_t | w_{<t}) 
+    &= \frac{\widehat{Pr} (w_t | w_{<t}) \cdot \exp \left( -\alpha \cdot H(W_{t+1} | w_{\leq t})\right)}{\sum_{w_t' \in V}\widehat{Pr} (w'_t | w_{<t}) \cdot \exp \left( -\alpha \cdot H(W_{t+1} | w_t', w_{<t})\right)} \\
+    &= \frac{\exp \{u_t\}) \cdot \exp \left( -\alpha \cdot H(W_{t+1} | w_{\leq t})\right)}{\sum_{t'=1}^{|V|} \exp \{u_{t'}\} \cdot \exp \left( -\alpha \cdot H(W_{t+1} | w_{t'}, w_{<t})\right)} \\ 
+    &= \frac{\exp \{u_t -\alpha \cdot H(W_{t+1} | w_{\leq t})\}}{\sum_{t'=1}^{|V|} \exp \{u_t' -\alpha \cdot H(W_{t+1} | w_{t'}, w_{<t})\}} && \square
+\end{align*}
+
+Critically, $u_{1:|V|}' = u_{1:|V|} - \alpha^* \cdot \vec{H}$ is not a monotonically increasing transformation, while $u_{1:|V|}' = u_{1:|V|} / T$ is. Thus, local calibration can potentially change the argmax of the probability distribution, while temperature scaling will not. This is an important distinction. In the language of the previous discussion, local calibration applies a unique penalty for each logit, while temperature scaling applies the same proportion of penalty for all logits. 
+
+Nevertheless, for a given $\alpha^*$, there exists a temperature $T$ that obtains the same adjustment for each logit, depending on the logit's respective lookahead entropy:
+\begin{align*}
+    & \quad &
+    u_t / T &= u_t - \alpha^* \cdot H(W_{t+1} | w_{\leq t}) \\
+    & \Rightarrow &
+    T &= \frac{u_t}{u_t - \alpha^* \cdot H(W_{t+1} | w_{\leq t})}
+\end{align*}
+
+With this in mind, we propose Algorithm 5, which generates $T$ tokens given the output of Algorithm 2. (From here to the end of Section 5, $T$ refers to generation length and $T^*$ refers to temperature.) Algorithm 5 first computes $T^*$, the average expected temperature across all contexts. It then uses $T^*$ as its temperature for generations.
+
+\begin{algorithm}
+    \renewcommand{\thealgorithm}{5}
+    \caption{Calibrated Generation via Temperature Scaling}
+    \begin{algorithmic}[1]
+    \State Input: Model $\widehat{Pr}$, context of length $C$, $\alpha^*$, generation length $T$
+    \State \begin{align*}
+        T^* = \frac{1}{C} \sum_{k=1}^C \E_{w_t \sim Pr(\cdot|w_{<k})}\left[\frac{u_t}{u_t - \alpha^* \cdot H(w_{t+1}| w_t, w_{<k})}\right]
+    \end{align*}
+    \For {$t = 1:T$}
+    \State \begin{align*}
+        \widehat{Pr}^*(w_t | w_{<t}) = \frac{\exp \{ u_t / T^*\}}{\sum_{i = 1}^{|V|} \exp\{u_i / T^*\}}
+    \end{align*}
+    \State Sample $w_t \sim \widehat{Pr}^*$
+    \EndFor
+    \State \Return $w_1, w_2, ..., w_t$
+    \end{algorithmic}
+\end{algorithm}
+
+$T^*$ takes $VC$ inferences to compute. After computing $T^*$, we perform $O(T)$ inferences to generate $T$ tokens. Thus, composing Algorithm 2 with Algorithm 5 allows us to generate $T$ tokens in $O(VC + T)$ time instead of $O(VC + VT)$ time. We identify two benefits of Algorithm 5, in addition to the speedup in computational complexity. First, Algorithm 5 also gives us another way of interpreting $\alpha^*$. For example, on our 100-line corpus, Algorithm 2 computes $\alpha^* = 0.0339$. Algorithm 5 computes a corresponding $T^* = 0.998$. This indicates that $\alpha^* = 0.0339$ slightly suppresses diversity of generations (recall Section 3.3). Second, Algorithm 5 requires no hyperparameter tuning, unlike Algorithms 3 and 4.
+
+Generating with $T^*=0.998$ gives a modest improvement in perplexity, as shown in Figure \ref{temp-scaling}. This modest improvement is likely due to the fact that temperature scaling, like Algorithm 4, applies the same penalty to each logit. Local calibration shines in that it imposes a differentiated penalty to each logit, thereby allowing us to sample from the entire distribution with greater confidence. Temperature scaling does not provide the same benefits, leading to a more modest improvement. On average, we observe a 36\% decrease in entropy rate drift\footnote{$1 - \frac{3.868}{5.999} = 0.36$.}.
+
+\begin{figure}
+    \centering
+    \includegraphics{figures/f6_temperature_scaling.png}
+    \caption{Perplexity curve for uncalibrated generation vs. using a temperature determined by calibration. Perplexity increases 5.999 over 90 generations in uncalibrated generation, compared to 3.868 for $T=0.998$.}
+    \label{temp-scaling}
+\end{figure}
+
+\section{Conclusion}
+
+There currently does not exist a practical method for mitigating entropy rate drift in natural language generation. We have shown that entropy rate drift occurs in generations from GPT-2, both with and without the use of common decoding heuristics. Here, we propose and give empirical results for two novel heuristics aimed at accelerating local calibration and subsequent generation. Our first heuristic seeks to approximate the lookahead entropies for tokens in the tail of the distribution, reducing the number of required inferences by several orders of magnitude. Our second heuristic seeks to reduce local calibration to temperature scaling by computing a unique temperature $T^*$ to correspond to $\alpha^*$. Heuristic 1, comprised by Algorithms 3 and 4, tends to make entropy rate drift worse. Performing the same adjustment to tokens within the distribution's tail may adjust the probabilities to be less reflective of our confidence in them. Heuristic 2, comprised by Algorithm 5, obtains a small drop in entropy rate drift.
+
+Local calibration is a promising technique with reasonable computational complexity from a statistical perspective. However, the cost of repeatedly computing lookahead entropies makes the technique far slower than other generation-improving decoding techniques. Further work must be done to develop a version of local calibration that is usable in practice. We hope that this report illuminates both the necessity of local calibration and ways to improve the technique going forward.
+
+\subsection{Future Work}
+
+One possible way to accelerate local calibration is to use it in conjunction with other decoding heuristics. We hypothesize that Heuristic 1 does not work due to occasional samplings from the distribution's tail. Thus, we may be able to avoid the tail entirely, calibrating on and generating from the top $k$ tokens only. This strategy makes sense if one is planning to eventually use top-$k$ sampling -- examining tokens outside the top $k$ then becomes unnecessary. 
+
+Another method for entropy rate calibration may seek to avoid local calibration entirely. Here, one could adjust the hyperparameters for top-$k$ sampling, nucleus sampling, or temperature scaling until entropy rate drift is mitigated on a validation set. To the author's knowledge, there currently does not exist a method for finding optimal hyperparameters to mitigate entropy rate drift. 
+
+Last, entropy rate drift can potentially be connected to other phenomena, such as repetition or hallucination. For example, hallucination may be related to low probability samplings that drive up the entropy rate. Finding such a connection would be very fruitful, as mitigating hallucination would then mitigate entropy rate drift as a side effect.
+
+\subsection{Acknowledgements}
+
+Professor Karthik Narasimhan has been an incredible advisor throughout this entire semester. Professor, thank you for your patience, generosity, and willingness to guide and explain. I would like to thank Cyril Zhang for providing me with starter code, and my friends and family for their constant support.
 
 \bstctlcite{bstctl:etal, bstctl:nodash, bstctl:simpurl}
 \bibliographystyle{IEEEtranS}
 \bibliography{references}
 
-\end{document}
+\section{Appendix}
+\subsection{Experimental Details}
 
+All experimental code can be found at \url{https://github.com/mikkyhu/transformers}. The repo is a fork of the HuggingFace transformers repo \cite{Wolf2019HuggingFacesTS}, which conveniently reimplements many popular Transformer-based models in PyTorch.
+
+We ran experiments on Princeton Natural Language Processing's ionic cluster. For GPUs, we used Nvidia RTX 2080Tis with 11GB memory. Experiments were conducted on GPT-2 ``small,'' a version of GPT-2 with 124M parameters.
+
+For calibration, generation, and additional properties of the English language, we used the Google Billion Words (GBW) corpus \cite{gbw}. Table \ref{table:reproduce} provides instructions on how to reproduce the tables and figures in Sections 1-6.
+
+\begin{table}[ht]
+    \centering
+    \begin{tabular}[t]{|p{0.25\textwidth}|p{0.65\textwidth}|}
+    \hline
+    Figure & Experimental Details \\
+    \hline
+    \hline
+    Figure 1, Tables 1 and 2, Figure 6 & Averaged entropies across 128 independent generations over 100 unrelated contexts. Contexts sampled randomly from GBW. Set generation length to 100. Entropy rate drift measured from token 10 to token 100. We started measurements from token 10 because we noticed some variability in the first 10 tokens. Since we are more interested in long-term trends, we wanted to discount this variability. \\
+    \hline
+    Figure 2  & Randomly sampled a context from GBW. Plugged this context into GPT-2, sorted the probability distribution, and plotted the distribution for the top 50 tokens.  \\
+    \hline
+    Figure 3 & Obtained 300,000 contexts from GBW. For each context, computed the probability mass captured by the top 512 tokens. Constructed a histogram of these proportions. \\
+    \hline
+    Table 3 & All calibrations performed on a 100-line, randomly chosen subset of GBW. We hereby refer to this corpus at GBW-100. Calibrated on GBW-100 using Algorithm 3 and different values of $k$. Ground truth $\alpha^*$ value obtained by running Algorithm 2 on GBW-100. We used GPU batching to make calibrations run faster. \\
+    \hline
+    Figure 4 & Used Algorithm 4 for generations with calibration. Here, we used a single context exhibiting entropy rate blowup. The context is: ` ``It is a damaging blow,'' International Cycling Union (UCI) president Pat McQuaid told Reuters. ' Call this context $C$. Due to the slowness of local calibration, we could not feasibly average across 100 unrelated contexts as in Figure 1. Averaged entropies across 128 independent generations. Entropy rate drift measured from token 10 to token 100. \\
+    \hline
+    Figure 5 & Prompted GPT-2 with context $C$. Computed lookahead entropies for each token. Sorted tokens and plotted each token's corresponding lookahead entropy. \\
+    \hline
+    \end{tabular}
+    \caption{Instructions for reproducing tables and figures.}
+    \label{table:reproduce}
+\end{table}
+
+\subsection{Generation Samples}
+
+All generations in Table \ref{table:generations} were prompted with the following context:
+\begin{quote}
+    ``It is a damaging blow,'' International Cycling Union ( UCI ) president Pat McQuaid told Reuters.
+\end{quote}
+\begin{table}[ht]
+    \centering
+    \begin{tabular}[t]{|p{0.25\textwidth}|p{0.65\textwidth}|}
+        \hline 
+        Settings & Generation \\
+        \hline
+        \hline
+        Algorithm 4, $k=64$, $\alpha=0.4082$ & He added that the Paris Games would run into ``intensity changes'', with riders moving around ``channeling learning towards training and mental growth after pooling'', a planner said at the opening ceremony last week by the TUC. \\
+        \hline
+        Algorithm 4, $k=512$, $\alpha=0.0859$ & Additionally, he said he felt many professional cyclists ``are mired in uncertainty and ask tough questions, cause controversy and matter less'' in the future. \\
+        \hline
+        No calibration & In an address to weight-room officials in London on Sunday, McQuaid said: ``Today we approve the ban on law-abiding cyclists in a position to lose their cycling privileges by curtailing their source of funding.'' \\
+        \hline
+    \end{tabular}
+    \caption{Outputs of GPT-2 given different calibration settings. The prompt: ` ``It is a damaging blow,'' International Cycling Union ( UCI ) president Pat McQuaid told Reuters. '}
+    \label{table:generations}
+\end{table}
+
+
+Happy to provide any additional experimental details or generation samples! I can be reached at \href{mailto:myhu@princeton.edu}{myhu@princeton.edu}.
+
+\subsection{Honor Code}
+
+I pledge my honor that this paper represents my own work in accordance with University regulations.
+
+
+\end{document}
